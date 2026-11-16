@@ -1,0 +1,242 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    // Entity Validation Helpers
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             data.email is string && data.email.size() <= 160 &&
+             data.degreeProgram is string && data.degreeProgram.size() <= 100 &&
+             data.academicYear is string && data.academicYear.size() <= 40 &&
+             data.targetCareerRole is string && data.targetCareerRole.size() <= 100 &&
+             data.dailyStudyHoursTarget is number && data.dailyStudyHoursTarget >= 0.5 && data.dailyStudyHoursTarget <= 12.0 &&
+             data.onboardingCompleted is bool &&
+             data.preferredDarkMode is bool;
+    }
+
+    function isValidCareerGoal(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.targetRole is string && data.targetRole.size() <= 100 &&
+             data.targetDateEpochDay is int && data.targetDateEpochDay >= 19000 && data.targetDateEpochDay <= 40000 &&
+             data.priority in ['HIGH', 'MEDIUM', 'LOW'] &&
+             data.status in ['ACTIVE', 'COMPLETED', 'ARCHIVED'];
+    }
+
+    function isValidGoalMilestone(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.goalId is string && isValidId(data.goalId) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+             data.description is string && data.description.size() <= 400 &&
+             data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 200 &&
+             data.targetDateEpochDay is int && data.targetDateEpochDay >= 19000 && data.targetDateEpochDay <= 40000 &&
+             data.isCompleted is bool;
+    }
+
+    function isValidTimetableBlock(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.dayOfWeek is int && data.dayOfWeek >= 1 && data.dayOfWeek <= 7 &&
+             data.startMinuteOfDay is int && data.startMinuteOfDay >= 0 && data.startMinuteOfDay < 1440 &&
+             data.endMinuteOfDay is int && data.endMinuteOfDay > data.startMinuteOfDay && data.endMinuteOfDay <= 1440 &&
+             data.blockType in ['CLASS', 'LAB', 'EXAM', 'STUDY'] &&
+             data.location is string && data.location.size() <= 80;
+    }
+
+    function isValidStudyTask(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.goalId is string && data.goalId.size() <= 128 &&
+             data.milestoneId is string && data.milestoneId.size() <= 128 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+             data.notes is string && data.notes.size() <= 400 &&
+             data.scheduledEpochDay is int && data.scheduledEpochDay >= 19000 && data.scheduledEpochDay <= 40000 &&
+             data.estimatedMinutes is int && data.estimatedMinutes >= 5 && data.estimatedMinutes <= 480 &&
+             data.priority in ['HIGH', 'MEDIUM', 'LOW'] &&
+             data.status in ['TODO', 'IN_PROGRESS', 'COMPLETED', 'MISSED', 'RECOVERED'] &&
+             data.recoveryCount is int && data.recoveryCount >= 0 && data.recoveryCount <= 50 &&
+             data.aiReason is string && data.aiReason.size() <= 300;
+    }
+
+    function isValidFocusSession(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.taskId is string && data.taskId.size() <= 128 &&
+             data.taskTitle is string && data.taskTitle.size() >= 1 && data.taskTitle.size() <= 140 &&
+             data.goalId is string && data.goalId.size() <= 128 &&
+             data.plannedMinutes is int && data.plannedMinutes >= 1 && data.plannedMinutes <= 240 &&
+             data.actualMinutes is int && data.actualMinutes >= 0 && data.actualMinutes <= 240 &&
+             data.completed is bool &&
+             data.startedEpochMillis is int && data.startedEpochMillis >= 1700000000000;
+    }
+
+    // 1. User Profile Collection
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'email', 'degreeProgram', 'academicYear', 'targetCareerRole', 'dailyStudyHoursTarget', 'onboardingCompleted', 'preferredDarkMode', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'degreeProgram', 'academicYear', 'targetCareerRole', 'dailyStudyHoursTarget', 'onboardingCompleted', 'preferredDarkMode', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().email == existing().email &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'degreeProgram', 'academicYear', 'targetCareerRole', 'dailyStudyHoursTarget', 'onboardingCompleted', 'preferredDarkMode', 'updatedAt']);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // 2. Career Goals Subcollection
+      match /goals/{goalId} {
+        allow get: if isOwner(userId) && isValidId(goalId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(goalId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'targetRole', 'targetDateEpochDay', 'priority', 'status', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'targetRole', 'targetDateEpochDay', 'priority', 'status', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         isValidCareerGoal(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(goalId) &&
+                         isValidCareerGoal(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'targetRole', 'targetDateEpochDay', 'priority', 'status', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(goalId);
+      }
+
+      // 3. Goal Milestones Subcollection (with Parent Goal Gate)
+      match /milestones/{milestoneId} {
+        allow get: if isOwner(userId) && isValidId(milestoneId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(milestoneId) &&
+                         incoming().keys().hasAll(['userId', 'goalId', 'title', 'description', 'orderIndex', 'targetDateEpochDay', 'isCompleted', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'goalId', 'title', 'description', 'orderIndex', 'targetDateEpochDay', 'isCompleted', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         isValidGoalMilestone(incoming()) &&
+                         existsAfter(/databases/$(database)/documents/users/$(userId)/goals/$(incoming().goalId));
+
+        allow update: if isOwner(userId) &&
+                         isValidId(milestoneId) &&
+                         isValidGoalMilestone(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().goalId == existing().goalId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'orderIndex', 'targetDateEpochDay', 'isCompleted', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(milestoneId);
+      }
+
+      // 4. Timetable Blocks Subcollection
+      match /timetable/{blockId} {
+        allow get: if isOwner(userId) && isValidId(blockId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(blockId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'dayOfWeek', 'startMinuteOfDay', 'endMinuteOfDay', 'blockType', 'location', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'dayOfWeek', 'startMinuteOfDay', 'endMinuteOfDay', 'blockType', 'location', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         isValidTimetableBlock(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(blockId) &&
+                         isValidTimetableBlock(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'dayOfWeek', 'startMinuteOfDay', 'endMinuteOfDay', 'blockType', 'location', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(blockId);
+      }
+
+      // 5. Study Tasks Subcollection
+      match /tasks/{taskId} {
+        allow get: if isOwner(userId) && isValidId(taskId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(taskId) &&
+                         incoming().keys().hasAll(['userId', 'goalId', 'milestoneId', 'title', 'notes', 'scheduledEpochDay', 'estimatedMinutes', 'priority', 'status', 'recoveryCount', 'aiReason', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'goalId', 'milestoneId', 'title', 'notes', 'scheduledEpochDay', 'estimatedMinutes', 'priority', 'status', 'recoveryCount', 'aiReason', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         isValidStudyTask(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(taskId) &&
+                         isValidStudyTask(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['goalId', 'milestoneId', 'title', 'notes', 'scheduledEpochDay', 'estimatedMinutes', 'priority', 'status', 'recoveryCount', 'aiReason', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(taskId);
+      }
+
+      // 6. Focus Sessions Subcollection (Append-Only Integrity)
+      match /focusSessions/{sessionId} {
+        allow get: if isOwner(userId) && isValidId(sessionId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(sessionId) &&
+                         incoming().keys().hasAll(['userId', 'taskId', 'taskTitle', 'goalId', 'plannedMinutes', 'actualMinutes', 'completed', 'startedEpochMillis', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'taskId', 'taskTitle', 'goalId', 'plannedMinutes', 'actualMinutes', 'completed', 'startedEpochMillis', 'createdAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidFocusSession(incoming());
+
+        allow update: if false;
+        allow delete: if isOwner(userId) && isValidId(sessionId);
+      }
+    }
+  }
+}

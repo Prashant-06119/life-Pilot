@@ -1,0 +1,6 @@
+{
+  "name": "Life Pilot",
+  "description": "The AI-powered career execution platform for college students. Turns career goals into daily execution with smart timetables, tasks, focus sessions, and adaptive recovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

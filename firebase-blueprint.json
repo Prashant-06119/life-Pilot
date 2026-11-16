@@ -1,0 +1,202 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated student profile and daily capacity settings. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "degreeProgram": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "targetCareerRole": { "type": "string" },
+        "dailyStudyHoursTarget": { "type": "number" },
+        "onboardingCompleted": { "type": "boolean" },
+        "preferredDarkMode": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "email",
+        "degreeProgram",
+        "academicYear",
+        "targetCareerRole",
+        "dailyStudyHoursTarget",
+        "onboardingCompleted",
+        "preferredDarkMode",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CareerGoal": {
+      "title": "CareerGoal",
+      "description": "Long-term career objective owned by the student. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "targetRole": { "type": "string" },
+        "targetDateEpochDay": { "type": "integer" },
+        "priority": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+        "status": { "type": "string", "enum": ["ACTIVE", "COMPLETED", "ARCHIVED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "title",
+        "targetRole",
+        "targetDateEpochDay",
+        "priority",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GoalMilestone": {
+      "title": "GoalMilestone",
+      "description": "Ordered milestone belonging to a CareerGoal. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "goalId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "orderIndex": { "type": "integer" },
+        "targetDateEpochDay": { "type": "integer" },
+        "isCompleted": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "goalId",
+        "title",
+        "description",
+        "orderIndex",
+        "targetDateEpochDay",
+        "isCompleted",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TimetableBlock": {
+      "title": "TimetableBlock",
+      "description": "Weekly fixed academic or planned study block. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "dayOfWeek": { "type": "integer" },
+        "startMinuteOfDay": { "type": "integer" },
+        "endMinuteOfDay": { "type": "integer" },
+        "blockType": { "type": "string", "enum": ["CLASS", "LAB", "EXAM", "STUDY"] },
+        "location": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "title",
+        "dayOfWeek",
+        "startMinuteOfDay",
+        "endMinuteOfDay",
+        "blockType",
+        "location",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "StudyTask": {
+      "title": "StudyTask",
+      "description": "Actionable study or career-prep task linked to goals/milestones. Clients must write FieldValue.serverTimestamp() for createdAt and updatedAt.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "goalId": { "type": "string" },
+        "milestoneId": { "type": "string" },
+        "title": { "type": "string" },
+        "notes": { "type": "string" },
+        "scheduledEpochDay": { "type": "integer" },
+        "estimatedMinutes": { "type": "integer" },
+        "priority": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW"] },
+        "status": { "type": "string", "enum": ["TODO", "IN_PROGRESS", "COMPLETED", "MISSED", "RECOVERED"] },
+        "recoveryCount": { "type": "integer" },
+        "aiReason": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "goalId",
+        "milestoneId",
+        "title",
+        "notes",
+        "scheduledEpochDay",
+        "estimatedMinutes",
+        "priority",
+        "status",
+        "recoveryCount",
+        "aiReason",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FocusSession": {
+      "title": "FocusSession",
+      "description": "Completed or stopped deep-work focus session record. Clients must write FieldValue.serverTimestamp() for createdAt.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "taskId": { "type": "string" },
+        "taskTitle": { "type": "string" },
+        "goalId": { "type": "string" },
+        "plannedMinutes": { "type": "integer" },
+        "actualMinutes": { "type": "integer" },
+        "completed": { "type": "boolean" },
+        "startedEpochMillis": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "taskId",
+        "taskTitle",
+        "goalId",
+        "plannedMinutes",
+        "actualMinutes",
+        "completed",
+        "startedEpochMillis",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Student profile and onboarding preferences isolated per user."
+    },
+    "/users/{userId}/goals/{goalId}": {
+      "schema": { "$ref": "#/entities/CareerGoal" },
+      "description": "Career goals owned by the student."
+    },
+    "/users/{userId}/milestones/{milestoneId}": {
+      "schema": { "$ref": "#/entities/GoalMilestone" },
+      "description": "Career milestones linked to a parent goal."
+    },
+    "/users/{userId}/timetable/{blockId}": {
+      "schema": { "$ref": "#/entities/TimetableBlock" },
+      "description": "Weekly fixed classes and scheduled study blocks."
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/StudyTask" },
+      "description": "Daily execution tasks with recovery metadata."
+    },
+    "/users/{userId}/focusSessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/FocusSession" },
+      "description": "Append-only focus session logs."
+    }
+  }
+}
