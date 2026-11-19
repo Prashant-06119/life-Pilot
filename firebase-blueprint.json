@@ -171,6 +171,28 @@
         "startedEpochMillis",
         "createdAt"
       ]
+    },
+    "DistractionBlockerConfig": {
+      "title": "DistractionBlockerConfig",
+      "description": "User-selected distracting app package names and Focus Mode blocking toggle. Stores only package identifiers (max 100), never accessibility events or usage logs.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "blockingEnabled": { "type": "boolean" },
+        "blockedPackages": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "blockingEnabled",
+        "blockedPackages",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -197,6 +219,10 @@
     "/users/{userId}/focusSessions/{sessionId}": {
       "schema": { "$ref": "#/entities/FocusSession" },
       "description": "Append-only focus session logs."
+    },
+    "/users/{userId}/blockerConfig/{configId}": {
+      "schema": { "$ref": "#/entities/DistractionBlockerConfig" },
+      "description": "Per-user distraction blocking preferences for Focus Mode."
     }
   }
 }

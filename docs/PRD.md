@@ -33,13 +33,13 @@
 4. **Study Timetable:** Weekly Monday–Sunday schedule supporting fixed academic blocks (College Class, Lab, Exam/Other) and scheduled Career Study blocks with overlap validation.
 5. **Smart Task Manager:** Create, prioritize (`HIGH`, `MEDIUM`, `LOW`), schedule, complete, mark missed, and delete tasks linked to a career goal/milestone with estimated duration.
 6. **Basic Task Recovery:** Detect overdue/missed tasks and propose non-overlapping recovery slots across upcoming days using the deterministic Recovery Engine (with optional Gemini reasoning).
-7. **Focus Timer:** Interactive deep-work countdown timer (25m Pomodoro, 50m Deep Work, custom presets) bound to a specific task, logging completed focus sessions and actual minutes into Firestore.
+7. **Focus Timer & Multi-App Focus Guard:** Interactive deep-work countdown timer (15m/25m/50m/90m presets) bound to a specific task, logging completed focus sessions into Firestore, paired with opt-in Multi-App Distraction Blocking that lets students choose distracting launcher apps to pause during active, unpaused Focus sprints while protecting emergency, dialer, and settings apps.
 8. **Progress Dashboard:** Unified home command center showing today's priority tasks, upcoming timetable blocks, weekly goal execution rate, focus minutes, active streak, and quick recovery/AI triggers.
 9. **Basic AI Planning:** Gemini (`gemini-3.8-flash` via Firebase AI Logic) generating structured career milestone plans, priority explanations, and recovery suggestions—strictly validated by deterministic schedule checks before saving.
 
 ### Out of Scope (Explicitly Excluded from MVP v1)
 - iOS application
-- Advanced system-wide app blocking / Accessibility overlays
+- Broad system-wide telemetry or `QUERY_ALL_PACKAGES` usage tracking
 - College administration portal
 - Social networking / leaderboards / chat
 - Complex course/mentor marketplace
@@ -57,7 +57,7 @@
 | **FR-4** | Timetable | As a student, I want to block fixed college classes so study tasks never collide. | Day selector (Mon–Sun), block creation with start/end time, overlap prevention, visual distinction between Fixed Class vs. Study Block. |
 | **FR-5** | Smart Tasks | As a student, I want priority-ordered daily tasks linked to my career milestones. | Filter by Today / Upcoming / Completed / Missed; mark Done or Missed; deterministic priority sorting. |
 | **FR-6** | Task Recovery | As a student, when I miss tasks, I want 1-tap realistic rescheduling. | Lists missed/overdue tasks; computes open non-overlapping slots respecting daily hour limits; 1-tap "Accept Recovery" updates task dates and marks `RECOVERED`. |
-| **FR-7** | Focus Timer | As a student, I want a distraction-free timer tied to my task. | Start/Pause/Reset/Complete controls; persists `FocusSession` on completion and increments task/dashboard focus minutes. |
+| **FR-7** | Focus Timer & App Blocker | As a student, I want a distraction-free timer tied to my task that guards against chosen distracting apps. | Start/Pause/Reset/Complete controls; persists `FocusSession` on completion; supports launcher app discovery (`<queries>`), searchable multi-select, explicit Accessibility disclosure, live restriction screen (`FocusBlockOverlayActivity`), emergency override, and auto-unlock on pause/complete/reset/restart. |
 | **FR-8** | Dashboard | As a student, I want one glance at today's execution and weekly progress. | Displays execution %, total focus minutes, today's next block/task, missed-task recovery banner when count > 0, and goal progress cards. |
 | **FR-9** | AI Study Planner | As a student, I want Gemini to generate a structured study plan for my goal. | Generates structured JSON milestones/tasks within 60s timeout; deterministic engine validates durations/dates; user previews and taps "Apply to Plan". |
 

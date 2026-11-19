@@ -60,6 +60,8 @@ All user records are strictly isolated beneath `/users/{userId}`:
    - `userId: String`, `goalId: String`, `milestoneId: String`, `title: String`, `notes: String`, `scheduledEpochDay: Long`, `estimatedMinutes: Long`, `priority: String` (`HIGH` | `MEDIUM` | `LOW`), `status: String` (`TODO` | `IN_PROGRESS` | `COMPLETED` | `MISSED` | `RECOVERED`), `recoveryCount: Long`, `aiReason: String`, `createdAt: Timestamp`, `updatedAt: Timestamp`.
 6. **`/users/{userId}/focusSessions/{sessionId}` (`FocusSession`)**
    - `userId: String`, `taskId: String`, `taskTitle: String`, `goalId: String`, `plannedMinutes: Long`, `actualMinutes: Long`, `completed: Boolean`, `startedEpochMillis: Long`, `createdAt: Timestamp`.
+7. **`/users/{userId}/blockerConfig/default` (`DistractionBlockerConfig`)**
+   - `userId: String`, `blockingEnabled: Boolean`, `blockedPackages: List<String>` (max 100 package names), `createdAt: Timestamp`, `updatedAt: Timestamp`. Stores only selected package identifiers—never accessibility events or usage logs.
 
 ---
 
@@ -93,3 +95,13 @@ All user records are strictly isolated beneath `/users/{userId}`:
 - **Two-Tier Rules Testing (Mandatory Before `DeployRules`):**
   1. Tier 1: `firestore.test.js` via `@firebase/rules-unit-testing` against local Firestore Emulator (port `8085`).
   2. Tier 2: Kotlin Robolectric `*RuleTest.kt` extending `FirestoreEmulatorTestBase` testing actual Repository methods against Auth (`9099`) & Firestore (`8085`) emulators.
+
+---
+
+## 6. Multi-App Distraction Blocking Architecture (Focus Mode Extension)
+- **Package Discovery (`InstalledAppDiscovery.kt`):** Uses Play-compliant `<queries>` (`ACTION_MAIN` + `CATEGORY_LAUNCHER`) instead of `QUERY_ALL_PACKAGES`. Dynamically excludes Life Pilot, phone/dialer (`ACTION_DIAL`/`ACTION_CALL`), home launcher (`CATEGORY_HOME`), Emergency SOS, Settings, SystemUI, and PermissionController.
+- **Privacy-Preserving Detection (`FocusBlockerAccessibilityService.kt`):** Configured with `accessibilityEventTypes="typeWindowStateChanged"` and `canRetrieveWindowContent="false"`. Evaluates foreground package names strictly against `FocusBlockerStateStore` local state on device—zero text reading or cloud logging.
+- **Session Lifecycle & Stale-State Safety (`FocusBlockerStateStore.kt`):**
+  - Restrictions engage only when `blockingEnabled && sessionActive && !sessionPaused && now < sessionEndEpochMillis && accessibilityGranted`.
+  - Pausing, resetting, completing, signing out, revoking Accessibility permission, or restarting the app automatically releases restrictions (`releaseSession()`), and expired `sessionEndEpochMillis` timestamps self-heal.
+- **Restriction Screen (`FocusBlockOverlayActivity.kt`):** Displays blocked app icon/name, active focus task, live remaining sprint timer, primary CTA back to Life Pilot Focus Mode, and an intentional Emergency Exit override.

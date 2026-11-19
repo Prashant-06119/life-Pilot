@@ -2,12 +2,14 @@
 
 ## 1. Automated Verification Results
 - **Android Build (`compile_applet`):** PASSED (`com.aistudio.lifepilot.kqxwrm`, `compileSdk = 36`, `targetSdk = 36`, `minSdk = 24`).
-- **Domain Engine & App Resource Unit Tests (`EnginesUnitTest` + `ExampleRobolectricTest`):**
+- **Domain Engine, Blocker & Resource Unit Tests (`EnginesUnitTest` + `FocusBlockerUnitTest` + `ExampleRobolectricTest` + `ExampleUnitTest`):** **9 / 9 PASSED**
   - `schedulingEngine_detectsOverlapAndFindsOpenGaps` — **PASSED**
-  - `recoveryEngine_reschedulesMissedTasksWithinDailyCap` — **PASSED**
-  - `progressCalculator_computesGoalAndDashboardMetrics` — **PASSED**
+  - `recoveryEngine_reschedulesMissedTasksWithinDailyCap` & `recoveryEngine_includesInProgressOverdue_andReschedulesTodayMissedToTomorrow` — **PASSED**
+  - `progressCalculator_computesGoalAndDashboardMetrics` & `progressCalculator_countsCompletedFocusSessionTowardStreak` — **PASSED**
+  - `FocusBlockerUnitTest.packageEligibilityFilter_excludesSystemEmergencyAndSelfPackages` — **PASSED**
+  - `FocusBlockerUnitTest.stateStore_lifecycleStartPauseResumeCompleteAndStaleExpiry` — **PASSED**
   - `ExampleRobolectricTest.read string from context` (`"Life Pilot"`) — **PASSED**
-- **Tier 1 Firestore Rules Emulator Suite (`node --test firestore.test.js`):** **7 / 7 PASSED**
+- **Tier 1 Firestore Rules Emulator Suite (`node --test firestore.test.js`):** **8 / 8 PASSED**
   - Unauthenticated access blocked across all collections.
   - Owner profile read/write & cross-user isolation enforced.
   - Shadow updates with ghost fields & immutable field tampering rejected.
@@ -15,12 +17,14 @@
   - Timetable `startMinuteOfDay < endMinuteOfDay` & enum validation enforced.
   - Task schema, list isolation, status enum validation, and recovery updates enforced.
   - Focus sessions append-only (`update` blocked) enforced.
-- **Tier 2 Kotlin Repository & Rules Suite (`LifePilotRepositoryRuleTest`):** **4 / 4 PASSED**
+  - Distraction blocker config (`/blockerConfig/default`) owner isolation, 100-package bound, and ghost-field rejection enforced.
+- **Tier 2 Kotlin Repository & Rules Suite (`LifePilotRepositoryRuleTest`):** **5 / 5 PASSED**
   - Authenticated owner end-to-end CRUD (`profile`, `goal`, `milestone`, `task`, `focusSession`) succeeded.
   - Unauthenticated `observeTasks` rejected with `PERMISSION_DENIED`.
   - Cross-user `observeTasks` rejected with `PERMISSION_DENIED`.
   - Milestone creation without existing parent goal rejected with `PERMISSION_DENIED`.
-- **Cloud Rules Deployment (`DeployRules`):** Deployed to Firebase project `gen-lang-client-0655113029`.
+  - Blocker config (`saveBlockerConfig` / `observeBlockerConfig`) owner sync and cross-user denial enforced.
+- **Cloud Rules Deployment (`DeployRules`):** Deployed updated `firestore.rules` to Firebase project `gen-lang-client-0655113029`.
 
 ---
 
@@ -42,10 +46,11 @@
 ---
 
 ## 4. Google Play Policy & Data Safety Checklist
-- **Least-Privilege Permissions:** `AndroidManifest.xml` declares only `INTERNET` and `ACCESS_NETWORK_STATE`. No dangerous storage, location, camera, or background permissions are requested.
+- **Least-Privilege Permissions & Package Visibility:** `AndroidManifest.xml` declares only `INTERNET` and `ACCESS_NETWORK_STATE`, uses Play-compliant `<queries>` (`ACTION_MAIN`/`CATEGORY_LAUNCHER`) instead of `QUERY_ALL_PACKAGES`, and avoids `SYSTEM_ALERT_WINDOW`.
+- **Privacy-Preserving Accessibility Disclosure:** `FocusBlockerAccessibilityService` sets `canRetrieveWindowContent="false"`, listens solely to `TYPE_WINDOW_STATE_CHANGED` during active unpaused sprints, never captures text or keystrokes, excludes Phone/Emergency SOS/Settings/Home/Life Pilot, and displays explicit prominent consent disclosure before opening Android Accessibility Settings.
 - **App Metadata:** Short, policy-compliant title (`Life Pilot`, 10 chars) without buzzwords, emojis, or ALL CAPS. Custom adaptive launcher icon configured across all densities.
 - **In-App Data Control & Deletion (`SettingsPrivacyDialog.kt`):**
   - Displays clear Privacy & Terms summary directly in-app.
-  - Supports **Sign Out** (clearing Credential Manager state + Firebase Auth sign-out).
-  - Supports **Delete All Cloud Data** (`repository.deleteAllUserData()`), purging subcollections (`tasks`, `milestones`, `goals`, `timetable`, `focusSessions`) and `/users/{uid}` in Cloud Firestore.
-- **Data Safety Disclosure Alignment:** Data collected (Name, Email from Google Sign-In; student goals, schedule, tasks, and focus logs) is encrypted in transit, tied strictly to the user's Google UID, never sold, and deletable in-app.
+  - Supports **Sign Out** (clearing Credential Manager state + releasing local blocker state + Firebase Auth sign-out).
+  - Supports **Delete All Cloud Data** (`repository.deleteAllUserData()`), purging subcollections (`tasks`, `milestones`, `goals`, `timetable`, `focusSessions`, `blockerConfig`), local blocker prefs, and `/users/{uid}` in Cloud Firestore.
+- **Data Safety Disclosure Alignment:** Data collected (Name, Email from Google Sign-In; student goals, schedule, tasks, focus logs, and user-chosen blocked app package names) is encrypted in transit, tied strictly to the user's Google UID, never sold, and deletable in-app.

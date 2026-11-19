@@ -100,6 +100,17 @@ service cloud.firestore {
              data.startedEpochMillis is int && data.startedEpochMillis >= 1700000000000;
     }
 
+    function isValidDistractionBlockerConfig(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.blockingEnabled is bool &&
+             data.blockedPackages is list &&
+             data.blockedPackages.size() <= 100 &&
+             (data.blockedPackages.size() == 0 ||
+              (data.blockedPackages[0] is string &&
+               data.blockedPackages[0].size() >= 3 &&
+               data.blockedPackages[0].size() <= 160));
+    }
+
     // 1. User Profile Collection
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
@@ -236,6 +247,30 @@ service cloud.firestore {
 
         allow update: if false;
         allow delete: if isOwner(userId) && isValidId(sessionId);
+      }
+
+      // 7. Distraction Blocker Config Subcollection
+      match /blockerConfig/{configId} {
+        allow get: if isOwner(userId) && configId == 'default';
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         configId == 'default' &&
+                         incoming().keys().hasAll(['userId', 'blockingEnabled', 'blockedPackages', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'blockingEnabled', 'blockedPackages', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         isValidDistractionBlockerConfig(incoming());
+
+        allow update: if isOwner(userId) &&
+                         configId == 'default' &&
+                         isValidDistractionBlockerConfig(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['blockingEnabled', 'blockedPackages', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && configId == 'default';
       }
     }
   }

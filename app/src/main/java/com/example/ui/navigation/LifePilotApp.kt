@@ -54,6 +54,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.R
+import com.example.blocker.FocusBlockerStateStore
 import com.example.core.ActionState
 import com.example.core.ThemePreferences
 import com.example.core.UiState
@@ -103,11 +104,13 @@ private val navDestinations = listOf(
 @Composable
 fun LifePilotApp(
     isDarkMode: Boolean,
-    themePreferences: ThemePreferences
+    themePreferences: ThemePreferences,
+    openFocusTabSignal: Int = 0
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
+    val blockerStateStore = remember(context) { FocusBlockerStateStore.getInstance(context) }
 
     var currentUser by remember { mutableStateOf<FirebaseUser?>(Firebase.auth.currentUser) }
     var authChecked by remember { mutableStateOf(currentUser != null) }
@@ -172,7 +175,11 @@ fun LifePilotApp(
                     LifePilotViewModel(
                         repository = repository,
                         aiService = AiPlannerService(),
-                        currentUserId = activeUser.uid
+                        currentUserId = activeUser.uid,
+                        blockerStateStore = blockerStateStore,
+                        isAccessibilityGrantedProvider = {
+                            FocusBlockerStateStore.isAccessibilityServiceEnabled(context)
+                        }
                     )
                 }
             }
@@ -182,6 +189,7 @@ fun LifePilotApp(
             user = activeUser,
             viewModel = vm,
             isDarkMode = isDarkMode,
+            openFocusTabSignal = openFocusTabSignal,
             onToggleDarkMode = { enabled ->
                 scope.launch {
                     themePreferences.setDarkMode(enabled)
@@ -189,6 +197,7 @@ fun LifePilotApp(
                 }
             },
             onSignOut = {
+                blockerStateStore.releaseSession()
                 signOutUser(
                     credentialManager = credentialManager,
                     scope = scope,
@@ -206,6 +215,7 @@ private fun LifePilotAuthenticatedHost(
     user: FirebaseUser,
     viewModel: LifePilotViewModel,
     isDarkMode: Boolean,
+    openFocusTabSignal: Int,
     onToggleDarkMode: (Boolean) -> Unit,
     onSignOut: () -> Unit
 ) {
@@ -215,6 +225,8 @@ private fun LifePilotAuthenticatedHost(
     val enrichedRecoveryProposals by viewModel.enrichedRecoveryProposals.collectAsStateWithLifecycle()
     val isEnrichingRecovery by viewModel.isEnrichingRecovery.collectAsStateWithLifecycle()
     val focusTimerState by viewModel.focusTimerState.collectAsStateWithLifecycle()
+    val blockerRuntimeState by viewModel.blockerRuntimeState.collectAsStateWithLifecycle()
+    val accessibilityGranted by viewModel.accessibilityGranted.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     var showAiPlannerSheet by remember { mutableStateOf(false) }
@@ -341,6 +353,12 @@ private fun LifePilotAuthenticatedHost(
                     popUpTo(Routes.DASHBOARD) { saveState = true }
                     launchSingleTop = true
                     restoreState = true
+                }
+            }
+
+            LaunchedEffect(openFocusTabSignal) {
+                if (openFocusTabSignal > 0) {
+                    navigateToTab(Routes.FOCUS)
                 }
             }
 
@@ -492,6 +510,24 @@ private fun LifePilotAuthenticatedHost(
                                 FocusScreen(
                                     workspace = workspace,
                                     timerState = focusTimerState,
+                                    blockerRuntimeState = blockerRuntimeState,
+                                    accessibilityGranted = accessibilityGranted,
+                                    onRefreshAccessibilityStatus = { viewModel.refreshAccessibilityStatus() },
+                                    onToggleBlocking = { enabled ->
+                                        viewModel.toggleDistractionBlocking(
+                                            enabled = enabled,
+                                            currentPackages = workspace.blockerConfig.blockedPackages
+                                        )
+                                    },
+                                    onSaveBlockedPackages = { packages ->
+                                        viewModel.saveBlockedAppPackages(
+                                            selectedPackages = packages,
+                                            enableIfNonEmpty = true
+                                        )
+                                    },
+                                    onEmergencyDisableBlocking = {
+                                        viewModel.emergencyDisableBlockingForSession()
+                                    },
                                     onSelectTask = { task -> viewModel.selectFocusTask(task) },
                                     onSetPresetMinutes = { mins -> viewModel.setFocusPresetMinutes(mins) },
                                     onStart = { viewModel.startFocusTimer() },

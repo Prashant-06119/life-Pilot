@@ -188,6 +188,41 @@ class LifePilotRepositoryRuleTest : FirestoreEmulatorTestBase() {
         assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, fsError!!.code)
     }
 
+    @Test
+    fun blockerConfig_saveAndObserve_enforcesOwnerIsolation() = runBlocking {
+        val aliceUid = signInTestUser(ALICE_EMAIL)
+        val aliceRepo = LifePilotRepository(firestore)
+
+        val saveRes = withTimeout(TIMEOUT_MS) {
+            aliceRepo.saveBlockerConfig(
+                blockingEnabled = true,
+                blockedPackages = listOf("com.instagram.android", "com.google.android.youtube")
+            )
+        }
+        assertTrue("Blocker config save failed: ${saveRes.exceptionOrNull()}", saveRes.isSuccess)
+
+        val observed = withTimeout(FLOW_TIMEOUT_MS) {
+            aliceRepo.observeBlockerConfig(aliceUid).first { it.blockingEnabled && it.blockedPackages.size == 2 }
+        }
+        assertTrue(observed.blockingEnabled)
+        assertEquals(listOf("com.instagram.android", "com.google.android.youtube"), observed.blockedPackages)
+
+        signInTestUser(BOB_EMAIL)
+        val bobRepo = LifePilotRepository(firestore)
+        val thrown = try {
+            withTimeout(FLOW_TIMEOUT_MS) {
+                bobRepo.observeBlockerConfig(aliceUid).first()
+            }
+            null
+        } catch (e: Exception) {
+            e
+        }
+        assertNotNull("Expected PERMISSION_DENIED for cross-user blocker config read", thrown)
+        val fsError = thrown!!.unwrapFirestoreException()
+        assertNotNull(fsError)
+        assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, fsError!!.code)
+    }
+
     private companion object {
         const val ALICE_EMAIL = "alice_lp@test.com"
         const val BOB_EMAIL = "bob_lp@test.com"

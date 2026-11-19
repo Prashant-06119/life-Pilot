@@ -250,3 +250,58 @@ test("Focus sessions are append-only (update blocked)", async () => {
 
   await assertFails(sessionRef.update({ actualMinutes: 99 }));
 });
+
+test("DistractionBlockerConfig enforces owner isolation, default docId, and bounded list", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const aliceConfigRef = aliceDb.collection("users").doc(ALICE_UID).collection("blockerConfig").doc("default");
+
+  await assertSucceeds(
+    aliceConfigRef.set({
+      userId: ALICE_UID,
+      blockingEnabled: true,
+      blockedPackages: ["com.instagram.android", "com.google.android.youtube"],
+      createdAt: nowTs(),
+      updatedAt: nowTs(),
+    })
+  );
+  await assertSucceeds(aliceConfigRef.get());
+
+  // Cross-user read & write denied
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("blockerConfig").doc("default").get());
+  await assertFails(
+    bobDb.collection("users").doc(ALICE_UID).collection("blockerConfig").doc("default").update({
+      blockingEnabled: false,
+      updatedAt: nowTs(),
+    })
+  );
+
+  // Arbitrary doc ID rejected
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).collection("blockerConfig").doc("custom_id").set({
+      userId: ALICE_UID,
+      blockingEnabled: true,
+      blockedPackages: ["com.instagram.android"],
+      createdAt: nowTs(),
+      updatedAt: nowTs(),
+    })
+  );
+
+  // Over 100 packages rejected
+  const tooManyApps = Array.from({ length: 101 }, (_, i) => `com.distraction.app${i}`);
+  await assertFails(
+    aliceConfigRef.update({
+      blockedPackages: tooManyApps,
+      updatedAt: nowTs(),
+    })
+  );
+
+  // Ghost field update rejected
+  await assertFails(
+    aliceConfigRef.update({
+      usageLog: ["com.instagram.android"],
+      updatedAt: nowTs(),
+    })
+  );
+});
+

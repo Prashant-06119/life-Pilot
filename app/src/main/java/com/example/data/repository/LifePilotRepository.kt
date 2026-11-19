@@ -7,6 +7,7 @@ import com.example.core.handleFirestoreError
 import com.example.domain.engine.RecoveryProposal
 import com.example.domain.model.BlockType
 import com.example.domain.model.CareerGoal
+import com.example.domain.model.DistractionBlockerConfig
 import com.example.domain.model.FocusSession
 import com.example.domain.model.GoalMilestone
 import com.example.domain.model.Priority
@@ -134,6 +135,27 @@ class LifePilotRepository(
                 }
                 .catch { error ->
                     handleFlowError(error, OperationType.LIST, colRef.path, userId)
+                    throw error
+                }
+        )
+    }
+
+    fun observeBlockerConfig(userId: String): Flow<DistractionBlockerConfig> = flow {
+        val docRef = userDoc(userId).collection("blockerConfig").document("default")
+        emitAll(
+            docRef.snapshots()
+                .map { snap ->
+                    if (snap.exists()) {
+                        snap.toObject(
+                            DistractionBlockerConfig::class.java,
+                            DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                        ) ?: DistractionBlockerConfig(userId = userId)
+                    } else {
+                        DistractionBlockerConfig(userId = userId)
+                    }
+                }
+                .catch { error ->
+                    handleFlowError(error, OperationType.GET, docRef.path, userId)
                     throw error
                 }
         )
@@ -635,12 +657,74 @@ class LifePilotRepository(
         }
     }
 
+    // --- Distraction Blocker Config ---
+
+    suspend fun saveBlockerConfig(
+        blockingEnabled: Boolean,
+        blockedPackages: List<String>
+    ): Result<Unit> = runCatching {
+        val uid = requireUserId()
+        val docRef = userDoc(uid).collection("blockerConfig").document("default")
+        val sanitizedPackages = blockedPackages
+            .map { it.trim() }
+            .filter { it.length in 3..160 }
+            .distinct()
+            .take(100)
+
+        val existingSnap = try {
+            docRef.get().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val fsError = generateSequence<Throwable>(e) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (fsError?.code == FirebaseFirestoreException.Code.UNAVAILABLE) {
+                try {
+                    docRef.get(Source.CACHE).await()
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                handleFirestoreError(e, OperationType.GET, docRef.path)
+                throw e
+            }
+        }
+
+        try {
+            if (existingSnap?.exists() == true) {
+                docRef.update(
+                    mapOf(
+                        "blockingEnabled" to blockingEnabled,
+                        "blockedPackages" to sanitizedPackages,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            } else {
+                docRef.set(
+                    mapOf(
+                        "userId" to uid,
+                        "blockingEnabled" to blockingEnabled,
+                        "blockedPackages" to sanitizedPackages,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            throw e
+        }
+    }
+
     // --- Privacy & Account Data Deletion (Phase 8 Security Compliance) ---
 
     suspend fun deleteAllUserData(): Result<Unit> = runCatching {
         val uid = requireUserId()
         val userRef = userDoc(uid)
-        val subcollections = listOf("goals", "milestones", "timetable", "tasks", "focusSessions")
+        val subcollections = listOf("goals", "milestones", "timetable", "tasks", "focusSessions", "blockerConfig")
         try {
             for (sub in subcollections) {
                 val snap = userRef.collection(sub).get().await()

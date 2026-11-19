@@ -35,6 +35,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
@@ -43,6 +47,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.example.blocker.FocusBlockerRuntimeState
 import com.example.core.DateUtils
 import com.example.domain.model.StudyTask
 import com.example.domain.model.TaskStatus
@@ -55,6 +62,12 @@ import com.example.ui.viewmodel.LifePilotWorkspace
 fun FocusScreen(
     workspace: LifePilotWorkspace,
     timerState: FocusTimerState,
+    blockerRuntimeState: FocusBlockerRuntimeState,
+    accessibilityGranted: Boolean,
+    onRefreshAccessibilityStatus: () -> Unit,
+    onToggleBlocking: (Boolean) -> Unit,
+    onSaveBlockedPackages: (List<String>) -> Unit,
+    onEmergencyDisableBlocking: () -> Unit,
     onSelectTask: (StudyTask?) -> Unit,
     onSetPresetMinutes: (Int) -> Unit,
     onStart: () -> Unit,
@@ -62,6 +75,12 @@ fun FocusScreen(
     onReset: () -> Unit,
     onCompleteAndLog: () -> Unit
 ) {
+    var showAppPickerDialog by remember { mutableStateOf(false) }
+    var showBlockerSetupDialog by remember { mutableStateOf(false) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        onRefreshAccessibilityStatus()
+    }
     val actionableTasks = workspace.rankedTasks.filter {
         TaskStatus.fromString(it.status) != TaskStatus.COMPLETED
     }.take(6)
@@ -228,6 +247,20 @@ fun FocusScreen(
             }
         }
 
+        // Multi-App Focus Guard Card
+        item {
+            DistractionBlockerCard(
+                blockerConfig = workspace.blockerConfig,
+                runtimeState = blockerRuntimeState,
+                timerState = timerState,
+                accessibilityGranted = accessibilityGranted,
+                onToggleBlocking = onToggleBlocking,
+                onOpenAppPicker = { showAppPickerDialog = true },
+                onOpenSetupDialog = { showBlockerSetupDialog = true },
+                onEmergencyDisableForSession = onEmergencyDisableBlocking
+            )
+        }
+
         // Bind Task to Focus Session
         item {
             Column(
@@ -333,5 +366,24 @@ fun FocusScreen(
                 }
             }
         }
+    }
+
+    if (showAppPickerDialog) {
+        BlockedAppsPickerDialog(
+            initialSelectedPackages = workspace.blockerConfig.blockedPackages,
+            onSaveSelection = { packages ->
+                showAppPickerDialog = false
+                onSaveBlockedPackages(packages)
+            },
+            onDismiss = { showAppPickerDialog = false }
+        )
+    }
+
+    if (showBlockerSetupDialog) {
+        BlockerSetupDialog(
+            accessibilityGranted = accessibilityGranted,
+            onRefreshStatus = onRefreshAccessibilityStatus,
+            onDismiss = { showBlockerSetupDialog = false }
+        )
     }
 }

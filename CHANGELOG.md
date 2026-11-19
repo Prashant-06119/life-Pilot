@@ -29,3 +29,11 @@ All notable changes across the 10-milestone Phase 5 MVP build and Phases 6–8 v
   - Built `DashboardScreen.kt` with weekly execution ring, focused minutes, active execution streak, missed-task recovery banner, today's prioritized queue, today's timetable preview, and active career goal rollups.
 - **Milestone 10 — AI Study Planner & Settings/Privacy:**
   - Built `AiPlannerSheet.kt` powered by Firebase AI Logic (`gemini-3.8-flash`) with structured JSON output, deterministic daily budget clamping, preview-before-apply workflow, and `SettingsPrivacyDialog.kt` (Dark/Light toggle, Privacy & Terms summary, Sign Out, Delete All Cloud Data).
+
+## [1.1.0] — Multi-App Focus Guard Extension
+
+### Added
+- **Installed App Discovery & Safety Exclusion (`InstalledAppDiscovery.kt`):** Added Play-compliant `<queries>` intent discovery for launcher apps (no `QUERY_ALL_PACKAGES`), real app icons and names, search & Selected filter, multi-select persistence, and automatic exclusion of Dialer/Emergency/Settings/Launcher/SystemUI and Life Pilot itself.
+- **Focus Guard State & Lifecycle Sync (`FocusBlockerStateStore.kt`, `LifePilotViewModel.kt`):** Coupled blocking state directly with `FocusTimerState` (arming on Start, pausing on Pause, restoring on Resume, releasing on Complete/Reset/Sign-Out/Restart, and self-healing past `sessionEndEpochMillis`).
+- **Privacy-Preserving App Detection & Restriction Experience (`FocusBlockerAccessibilityService.kt`, `FocusBlockOverlayActivity.kt`, `DistractionBlockerComponents.kt`):** Added explicit Play-compliant Accessibility disclosure & setup dialog with `ON_RESUME` status refresh, `canRetrieveWindowContent="false"` foreground transition check, restriction guidance screen returning users to Focus Mode, and Emergency Exit override.
+- **Cloud Sync & Zero-Trust Rules (`DistractionBlockerConfig`):** Persisted user-selected package list and toggle at `/users/{userId}/blockerConfig/default` with owner isolation and bounded array rules (`<= 100` entries), plus unit/Robolectric and two-tier Firebase Emulator tests.

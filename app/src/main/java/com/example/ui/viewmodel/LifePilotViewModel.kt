@@ -3,6 +3,8 @@ package com.example.ui.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.blocker.FocusBlockerRuntimeState
+import com.example.blocker.FocusBlockerStateStore
 import com.example.core.ActionState
 import com.example.core.DateUtils
 import com.example.core.UiState
@@ -17,6 +19,7 @@ import com.example.domain.engine.RecoveryEngine
 import com.example.domain.engine.RecoveryProposal
 import com.example.domain.engine.SchedulingEngine
 import com.example.domain.model.CareerGoal
+import com.example.domain.model.DistractionBlockerConfig
 import com.example.domain.model.FocusSession
 import com.example.domain.model.GoalMilestone
 import com.example.domain.model.StudyTask
@@ -36,6 +39,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -50,7 +54,8 @@ data class LifePilotWorkspace(
     val metrics: DashboardMetrics,
     val rankedTasks: List<StudyTask>,
     val recoveryProposals: List<RecoveryProposal>,
-    val todayAvailableMinutes: Int
+    val todayAvailableMinutes: Int,
+    val blockerConfig: DistractionBlockerConfig = DistractionBlockerConfig()
 )
 
 data class FocusTimerState(
@@ -60,13 +65,16 @@ data class FocusTimerState(
     val plannedMinutes: Int = 25,
     val remainingSeconds: Int = 25 * 60,
     val isRunning: Boolean = false,
-    val startedEpochMillis: Long = 0L
+    val startedEpochMillis: Long = 0L,
+    val blockingDisabledForSession: Boolean = false
 )
 
 class LifePilotViewModel(
     private val repository: LifePilotRepository,
     private val aiService: AiPlannerService,
-    private val currentUserId: String
+    private val currentUserId: String,
+    private val blockerStateStore: FocusBlockerStateStore? = null,
+    private val isAccessibilityGrantedProvider: () -> Boolean = { false }
 ) : ViewModel() {
 
     private data class CoreCollections(
@@ -78,6 +86,26 @@ class LifePilotViewModel(
     )
 
     private val retryTrigger = MutableStateFlow(0)
+
+    private val _accessibilityGranted = MutableStateFlow(isAccessibilityGrantedProvider())
+    val accessibilityGranted: StateFlow<Boolean> = _accessibilityGranted.asStateFlow()
+
+    val blockerRuntimeState: StateFlow<FocusBlockerRuntimeState> =
+        blockerStateStore?.state ?: MutableStateFlow(FocusBlockerRuntimeState()).asStateFlow()
+
+    init {
+        blockerStateStore?.releaseSession()
+    }
+
+    fun refreshAccessibilityStatus() {
+        val granted = isAccessibilityGrantedProvider()
+        _accessibilityGranted.value = granted
+        if (!granted) {
+            blockerStateStore?.releaseSession()
+        } else {
+            blockerStateStore?.currentState()
+        }
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val workspaceState: StateFlow<UiState<LifePilotWorkspace>> = retryTrigger.flatMapLatest {
@@ -91,8 +119,9 @@ class LifePilotViewModel(
             ) { profile, goals, milestones, timetable, tasks ->
                 CoreCollections(profile, goals, milestones, timetable, tasks)
             },
-            repository.observeFocusSessions(currentUserId)
-        ) { core, sessions ->
+            repository.observeFocusSessions(currentUserId),
+            repository.observeBlockerConfig(currentUserId)
+        ) { core, sessions, blockerConfig ->
             val today = DateUtils.todayEpochDay()
             val dailyHours = core.profile?.dailyStudyHoursTarget ?: 3.0
             val goalProgress = core.goals.map { goal ->
@@ -123,9 +152,16 @@ class LifePilotViewModel(
                 metrics = metrics,
                 rankedTasks = rankedTasks,
                 recoveryProposals = recoveryProposals,
-                todayAvailableMinutes = todayAvailable
+                todayAvailableMinutes = todayAvailable,
+                blockerConfig = blockerConfig
             )
         }
+            .onEach { workspace ->
+                blockerStateStore?.updateUserPreferences(
+                    enabled = workspace.blockerConfig.blockingEnabled,
+                    packages = workspace.blockerConfig.blockedPackages
+                )
+            }
             .map<LifePilotWorkspace, UiState<LifePilotWorkspace>> { UiState.Success(it) }
             .catch { error ->
                 val firestoreError = generateSequence(error) { it.cause }
@@ -511,18 +547,46 @@ class LifePilotViewModel(
     fun startFocusTimer() {
         val current = _focusTimerState.value
         if (current.isRunning) return
-        val startMillis = if (current.startedEpochMillis == 0L) System.currentTimeMillis() else current.startedEpochMillis
+        val wasStarted = current.startedEpochMillis > 0L
+        val startMillis = if (!wasStarted) System.currentTimeMillis() else current.startedEpochMillis
         val remaining = current.remainingSeconds.coerceAtLeast(1)
         val targetEndMillis = System.currentTimeMillis() + (remaining * 1000L)
+        val resetSessionDisable = !wasStarted
+        val disableForSession = if (resetSessionDisable) false else current.blockingDisabledForSession
+
         _focusTimerState.value = current.copy(
             isRunning = true,
             startedEpochMillis = startMillis,
-            remainingSeconds = remaining
+            remainingSeconds = remaining,
+            blockingDisabledForSession = disableForSession
         )
+
+        val granted = isAccessibilityGrantedProvider()
+        _accessibilityGranted.value = granted
+        val store = blockerStateStore
+        if (store != null && granted && !disableForSession) {
+            val runtime = store.currentState()
+            if (runtime.blockingEnabled && runtime.blockedPackages.isNotEmpty()) {
+                if (wasStarted && runtime.sessionActive) {
+                    store.resumeSession(targetEndMillis)
+                } else {
+                    store.activateForSession(current.selectedTaskTitle, targetEndMillis)
+                }
+            } else {
+                store.releaseSession()
+            }
+        } else {
+            store?.releaseSession()
+        }
 
         timerJob?.cancel()
         timerJob = viewModelScope.launch {
             while (_focusTimerState.value.isRunning) {
+                val stillGranted = isAccessibilityGrantedProvider()
+                if (!stillGranted) {
+                    _accessibilityGranted.value = false
+                    blockerStateStore?.releaseSession()
+                }
                 val secsLeft = ((targetEndMillis - System.currentTimeMillis() + 999L) / 1000L)
                     .toInt()
                     .coerceAtLeast(0)
@@ -538,16 +602,19 @@ class LifePilotViewModel(
 
     fun pauseFocusTimer() {
         timerJob?.cancel()
+        blockerStateStore?.pauseSession()
         _focusTimerState.value = _focusTimerState.value.copy(isRunning = false)
     }
 
     fun resetFocusTimer() {
         timerJob?.cancel()
+        blockerStateStore?.releaseSession()
         val planned = _focusTimerState.value.plannedMinutes
         _focusTimerState.value = _focusTimerState.value.copy(
             isRunning = false,
             remainingSeconds = planned * 60,
-            startedEpochMillis = 0L
+            startedEpochMillis = 0L,
+            blockingDisabledForSession = false
         )
     }
 
@@ -559,6 +626,7 @@ class LifePilotViewModel(
             return
         }
         timerJob?.cancel()
+        blockerStateStore?.releaseSession()
 
         val actualMinutes = if (naturalFinish) {
             state.plannedMinutes
@@ -571,7 +639,8 @@ class LifePilotViewModel(
         _focusTimerState.value = state.copy(
             isRunning = false,
             remainingSeconds = state.plannedMinutes * 60,
-            startedEpochMillis = 0L
+            startedEpochMillis = 0L,
+            blockingDisabledForSession = false
         )
 
         viewModelScope.launch {
@@ -591,11 +660,61 @@ class LifePilotViewModel(
         }
     }
 
+    // --- Multi-App Distraction Blocking ---
+
+    fun toggleDistractionBlocking(enabled: Boolean, currentPackages: List<String>) {
+        blockerStateStore?.updateUserPreferences(enabled = enabled, packages = currentPackages)
+        if (!enabled) {
+            blockerStateStore?.releaseSession()
+        } else if (_focusTimerState.value.isRunning && currentPackages.isNotEmpty() && isAccessibilityGrantedProvider()) {
+            val endMillis = System.currentTimeMillis() + (_focusTimerState.value.remainingSeconds.coerceAtLeast(1) * 1000L)
+            _focusTimerState.value = _focusTimerState.value.copy(blockingDisabledForSession = false)
+            blockerStateStore?.activateForSession(_focusTimerState.value.selectedTaskTitle, endMillis)
+        }
+        viewModelScope.launch {
+            repository.saveBlockerConfig(blockingEnabled = enabled, blockedPackages = currentPackages)
+                .onFailure { err ->
+                    _actionState.value = ActionState.Error(err.toReadableFirestoreMessage("Could not sync blocker toggle."))
+                }
+        }
+    }
+
+    fun saveBlockedAppPackages(selectedPackages: List<String>, enableIfNonEmpty: Boolean = true) {
+        val cleaned = selectedPackages.distinct().take(100)
+        val shouldEnable = if (cleaned.isEmpty()) false else enableIfNonEmpty
+        blockerStateStore?.updateUserPreferences(enabled = shouldEnable, packages = cleaned)
+        if (!shouldEnable) {
+            blockerStateStore?.releaseSession()
+        } else if (_focusTimerState.value.isRunning && isAccessibilityGrantedProvider() && !_focusTimerState.value.blockingDisabledForSession) {
+            val endMillis = System.currentTimeMillis() + (_focusTimerState.value.remainingSeconds.coerceAtLeast(1) * 1000L)
+            blockerStateStore?.activateForSession(_focusTimerState.value.selectedTaskTitle, endMillis)
+        }
+        viewModelScope.launch {
+            repository.saveBlockerConfig(blockingEnabled = shouldEnable, blockedPackages = cleaned)
+                .onSuccess {
+                    _actionState.value = ActionState.Success(
+                        if (cleaned.isEmpty()) "Blocked apps list cleared."
+                        else "Saved ${cleaned.size} app(s) for Focus Guard."
+                    )
+                }
+                .onFailure { err ->
+                    _actionState.value = ActionState.Error(err.toReadableFirestoreMessage("Could not save blocked apps."))
+                }
+        }
+    }
+
+    fun emergencyDisableBlockingForSession() {
+        blockerStateStore?.releaseSession()
+        _focusTimerState.value = _focusTimerState.value.copy(blockingDisabledForSession = true)
+        _actionState.value = ActionState.Success("Focus Guard paused for this sprint.")
+    }
+
     // --- Account Deletion (Phase 8 Privacy Compliance) ---
 
     fun deleteAccountData(onDeleted: () -> Unit, onError: () -> Unit = {}) {
         viewModelScope.launch {
             _actionState.value = ActionState.Loading
+            blockerStateStore?.clearAll()
             repository.deleteAllUserData()
                 .onSuccess {
                     _actionState.value = ActionState.Success("All cloud data deleted.")
@@ -611,6 +730,7 @@ class LifePilotViewModel(
     override fun onCleared() {
         super.onCleared()
         timerJob?.cancel()
+        blockerStateStore?.releaseSession()
     }
 
     private companion object {

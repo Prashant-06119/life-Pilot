@@ -143,3 +143,14 @@ data class FocusSession(
     val startedEpochMillis: Long = 0L,
     @ServerTimestamp val createdAt: Timestamp? = null
 )
+
+@IgnoreExtraProperties
+data class DistractionBlockerConfig(
+    @DocumentId val id: String = "default",
+    val userId: String = "",
+    val blockingEnabled: Boolean = false,
+    val blockedPackages: List<String> = emptyList(),
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+

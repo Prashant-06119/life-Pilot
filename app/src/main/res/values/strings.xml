@@ -5,4 +5,6 @@
     <string name="nav_goals">Roadmap</string>
     <string name="nav_planner">Planner</string>
     <string name="nav_focus">Focus</string>
+    <string name="accessibility_service_label">Life Pilot Focus Blocker</string>
+    <string name="accessibility_service_description">Detects when selected distracting apps are opened during an active Focus sprint so Life Pilot can guide you back to your study task. Screen content is never read, stored, or uploaded.</string>
 </resources>
